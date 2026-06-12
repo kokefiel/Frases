@@ -1,0 +1,24 @@
+{
+  "name": "Poso · Tres ideas cada mañana",
+  "short_name": "Poso",
+  "description": "Tres ideas cada mañana para que se vayan posando en ti.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#F8FAFC",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
