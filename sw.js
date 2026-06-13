@@ -1,5 +1,12 @@
-const CACHE = 'poso-v1';
-const ASSETS = ['./', './index.html', './manifest.json', './icon-180.png', './icon-512.png'];
+const CACHE = 'poso-v2';
+const ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-180.png',
+  './icon-512.png',
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js'
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
@@ -14,9 +21,10 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Red primero, caché como respaldo: siempre la última versión si hay conexión
+// Red primero, caché como respaldo. Las llamadas a Supabase no se cachean.
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  if (e.request.url.includes('supabase.co')) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
