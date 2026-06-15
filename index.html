@@ -353,6 +353,21 @@
     padding: 12px;
   }
 
+  /* ---------- Tarjeta de notificaciones ---------- */
+  .notify-card {
+    margin-top: 28px;
+    background: var(--card);
+    border-radius: 18px;
+    padding: 18px 20px;
+    box-shadow: 0 3px 14px rgba(70, 100, 130, 0.07);
+  }
+  .notify-head { display: flex; gap: 14px; align-items: flex-start; }
+  .notify-icon { font-size: 24px; line-height: 1.2; }
+  .notify-title { font-size: 16px; font-weight: 600; color: var(--ink); }
+  .notify-status { margin-top: 3px; font-size: 13.5px; color: var(--ink-soft); line-height: 1.45; }
+  .notify-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .notify-card.on { background: #EEF6FF; }
+
   .list-footer {
     margin-top: 30px;
     text-align: center;
@@ -447,11 +462,18 @@
     <h1 class="login-title">Poso</h1>
     <p class="login-sub">Tres ideas cada mañana, sincronizadas en todos tus dispositivos.</p>
 
-    <div class="login-card" id="login-step-email">
-      <label for="login-email">Tu email</label>
+    <div class="login-card" id="login-step-password">
+      <label for="login-email">Email</label>
       <input type="email" id="login-email" inputmode="email" autocomplete="email" placeholder="tu@email.com">
-      <button class="btn-primary" id="btn-send-code">Enviarme el código</button>
-      <p class="login-hint">Sin contraseñas: te llega un código de un solo uso.</p>
+      <label for="login-password" style="margin-top:14px">Contraseña</label>
+      <input type="password" id="login-password" autocomplete="current-password" placeholder="••••••••">
+      <button class="btn-primary" id="btn-password-login">Entrar</button>
+      <p class="login-hint">
+        <span id="signup-toggle-text">¿Primera vez? <button id="btn-show-signup">Crear cuenta</button></span>
+      </p>
+      <p class="login-hint" style="margin-top:4px">
+        <button id="btn-show-otp">Entrar con código por email</button>
+      </p>
     </div>
 
     <div class="login-card" id="login-step-code" style="display:none">
@@ -459,6 +481,7 @@
       <input type="text" id="login-code" class="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="········">
       <button class="btn-primary" id="btn-verify-code">Entrar</button>
       <p class="login-hint">¿No te llega? Mira en spam o <button id="btn-resend">reenvía el código</button></p>
+      <p class="login-hint" style="margin-top:4px"><button id="btn-back-password">← Volver a contraseña</button></p>
     </div>
   </div>
 </main>
@@ -495,11 +518,26 @@
 
   <div class="idea-list" id="idea-list"></div>
 
+  <div class="notify-card" id="notify-card">
+    <div class="notify-head">
+      <span class="notify-icon">🔔</span>
+      <div>
+        <div class="notify-title">Notificación cada mañana</div>
+        <div class="notify-status" id="notify-status">Recibe tus 3 ideas en el móvil.</div>
+      </div>
+    </div>
+    <div class="notify-actions" id="notify-actions">
+      <button class="btn-add" id="btn-enable-notif">Activar</button>
+      <button class="chip" id="btn-test-notif" style="display:none">Enviar prueba</button>
+    </div>
+  </div>
+
   <div class="list-footer">
     <span id="footer-tools" style="display:none">
       <button id="btn-export">Exportar</button> ·
       <button id="btn-import">Importar</button> ·
     </span>
+    <button id="btn-set-password">Contraseña</button> ·
     <button id="btn-logout">Salir</button>
     <div id="footer-email"></div>
   </div>
@@ -529,8 +567,9 @@ const DAILY_COUNT = 3;
 const ROMANS = ['I', 'II', 'III'];
 const CACHE_IDEAS = 'poso.cache.ideas';
 const CACHE_TODAY = 'poso.cache.today';
+const VAPID_PUBLIC = 'BHuv_uWIRpru_EkWoIcJc0tIDW8l3RivCDFWbhZqJvh08uELlolj9tGpzY-RxXsTC5niDDSut84bUs4gNq6dVv0';
 
-const state = { ideas: [], offline: false, pendingEmail: null };
+const state = { ideas: [], offline: false, pendingEmail: null, signupMode: false };
 
 /* ---------- Utilidades ---------- */
 function todayKey() {
@@ -583,19 +622,71 @@ function showLogin() {
   document.body.classList.add('logged-out');
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-login').classList.add('active');
+  showPasswordStep();
+}
+
+function showPasswordStep() {
+  document.getElementById('login-step-password').style.display = 'block';
+  document.getElementById('login-step-code').style.display = 'none';
+}
+function showOtpStep() {
+  document.getElementById('login-step-password').style.display = 'none';
+  document.getElementById('login-step-code').style.display = 'block';
+}
+
+// Alterna entre "Entrar" (contraseña existente) y "Crear cuenta" (registro)
+function toggleSignup() {
+  state.signupMode = !state.signupMode;
+  const btn = document.getElementById('btn-password-login');
+  const toggle = document.getElementById('signup-toggle-text');
+  const pwd = document.getElementById('login-password');
+  if (state.signupMode) {
+    btn.textContent = 'Crear cuenta';
+    pwd.autocomplete = 'new-password';
+    toggle.innerHTML = '¿Ya tienes cuenta? <button id="btn-show-signup">Entrar</button>';
+  } else {
+    btn.textContent = 'Entrar';
+    pwd.autocomplete = 'current-password';
+    toggle.innerHTML = '¿Primera vez? <button id="btn-show-signup">Crear cuenta</button>';
+  }
+  document.getElementById('btn-show-signup').addEventListener('click', toggleSignup);
+}
+
+async function passwordLogin() {
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  const password = document.getElementById('login-password').value;
+  if (!email || !email.includes('@')) { showToast('Escribe un email válido'); return; }
+  if (!password || password.length < 6) { showToast('La contraseña tiene al menos 6 caracteres'); return; }
+  const btn = document.getElementById('btn-password-login');
+  btn.disabled = true; const original = btn.textContent; btn.textContent = 'Un momento…';
+
+  if (state.signupMode) {
+    const { error } = await db.auth.signUp({ email, password });
+    btn.disabled = false; btn.textContent = original;
+    if (error) {
+      if (/already/i.test(error.message)) showToast('Ese email ya tiene cuenta. Pulsa "Entrar".');
+      else showToast('No se pudo crear: ' + error.message);
+      return;
+    }
+    const { data: { session } } = await db.auth.getSession();
+    if (session) { await enterApp(); }
+    else { showToast('Cuenta creada. Revisa tu email para confirmarla y luego entra.'); }
+    return;
+  }
+
+  const { error } = await db.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = original;
+  if (error) { showToast('Email o contraseña incorrectos'); return; }
+  await enterApp();
 }
 
 async function sendCode() {
   const email = document.getElementById('login-email').value.trim().toLowerCase();
-  if (!email || !email.includes('@')) { showToast('Escribe un email válido'); return; }
-  const btn = document.getElementById('btn-send-code');
-  btn.disabled = true; btn.textContent = 'Enviando…';
+  if (!email || !email.includes('@')) { showToast('Escribe tu email arriba primero'); return; }
   const { error } = await db.auth.signInWithOtp({ email });
-  btn.disabled = false; btn.textContent = 'Enviarme el código';
   if (error) { showToast('No se pudo enviar: ' + error.message); return; }
   state.pendingEmail = email;
-  document.getElementById('login-step-email').style.display = 'none';
-  document.getElementById('login-step-code').style.display = 'block';
+  showOtpStep();
   document.getElementById('login-code').focus();
   showToast('Código enviado a ' + email);
 }
@@ -611,14 +702,22 @@ async function verifyCode() {
   await enterApp();
 }
 
+// Establece o cambia la contraseña estando ya dentro (sesión activa)
+async function setPassword() {
+  const pwd = prompt('Escribe tu nueva contraseña (mínimo 6 caracteres):');
+  if (pwd === null) return;
+  if (pwd.length < 6) { showToast('Mínimo 6 caracteres'); return; }
+  const { error } = await db.auth.updateUser({ password: pwd });
+  if (error) { showToast('No se pudo: ' + error.message); return; }
+  showToast('Contraseña guardada ✓ Ya puedes entrar con ella');
+}
+
 async function logout() {
   if (!confirm('¿Cerrar sesión en este dispositivo?')) return;
   await db.auth.signOut();
   localStorage.removeItem(CACHE_IDEAS);
   localStorage.removeItem(CACHE_TODAY);
   state.ideas = [];
-  document.getElementById('login-step-email').style.display = 'block';
-  document.getElementById('login-step-code').style.display = 'none';
   showLogin();
 }
 
@@ -778,6 +877,7 @@ function renderIdeas() {
   });
 
   document.getElementById('footer-tools').style.display = ideas.length > 0 ? 'inline' : 'none';
+  refreshNotifyUI();
 }
 
 async function addIdea() {
@@ -862,6 +962,87 @@ async function importIdeas() {
   showToast(data.length + (data.length === 1 ? ' idea importada' : ' ideas importadas'));
 }
 
+/* ---------- Notificaciones push ---------- */
+let swRegistration = null;
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function refreshNotifyUI() {
+  const card = document.getElementById('notify-card');
+  const status = document.getElementById('notify-status');
+  const enableBtn = document.getElementById('btn-enable-notif');
+  const testBtn = document.getElementById('btn-test-notif');
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+    status.textContent = 'Para recibir notificaciones, abre la app desde el icono de tu pantalla de inicio.';
+    enableBtn.style.display = 'none';
+    testBtn.style.display = 'none';
+    return;
+  }
+  let sub = null;
+  try { sub = swRegistration && await swRegistration.pushManager.getSubscription(); } catch {}
+  if (Notification.permission === 'granted' && sub) {
+    card.classList.add('on');
+    status.textContent = 'Activadas en este dispositivo ✓';
+    enableBtn.style.display = 'none';
+    testBtn.style.display = 'inline-block';
+  } else if (Notification.permission === 'denied') {
+    card.classList.remove('on');
+    status.textContent = 'Bloqueadas. Actívalas en Ajustes del sistema para esta app.';
+    enableBtn.style.display = 'none';
+    testBtn.style.display = 'none';
+  } else {
+    card.classList.remove('on');
+    status.textContent = 'Recibe tus 3 ideas en el móvil cada mañana.';
+    enableBtn.style.display = 'inline-block';
+    testBtn.style.display = 'none';
+  }
+}
+
+async function enableNotifications() {
+  const enableBtn = document.getElementById('btn-enable-notif');
+  if (!swRegistration) { showToast('Espera un segundo y reinténtalo'); return; }
+  enableBtn.disabled = true;
+  try {
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { showToast('Permiso no concedido'); enableBtn.disabled = false; refreshNotifyUI(); return; }
+    let sub = await swRegistration.pushManager.getSubscription();
+    if (!sub) {
+      sub = await swRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC)
+      });
+    }
+    const { error } = await db.from('poso_push_subscriptions').upsert(
+      { endpoint: sub.endpoint, subscription: sub.toJSON() },
+      { onConflict: 'endpoint' }
+    );
+    if (error) { showToast('No se pudo guardar la suscripción'); enableBtn.disabled = false; return; }
+    showToast('Notificaciones activadas ✓');
+  } catch (e) {
+    showToast('No se pudieron activar: ' + (e.message || e));
+  }
+  enableBtn.disabled = false;
+  refreshNotifyUI();
+}
+
+async function sendTestNotification() {
+  const testBtn = document.getElementById('btn-test-notif');
+  testBtn.disabled = true;
+  const { data, error } = await db.functions.invoke('poso-send', { body: { test: true } });
+  testBtn.disabled = false;
+  if (error) { showToast('Error al enviar: ' + error.message); return; }
+  if (data && data.ok && data.sent > 0) showToast('Notificación enviada 🔔 mira el panel');
+  else if (data && data.sent === 0) showToast('Este dispositivo no está suscrito');
+  else showToast('Enviado, pero no hay ideas que mostrar');
+}
+
 /* ---------- Arranque ---------- */
 async function enterApp() {
   document.body.classList.remove('logged-out');
@@ -894,10 +1075,21 @@ document.getElementById('btn-add').addEventListener('click', addIdea);
 document.getElementById('btn-export').addEventListener('click', exportIdeas);
 document.getElementById('btn-import').addEventListener('click', importIdeas);
 document.getElementById('btn-logout').addEventListener('click', logout);
-document.getElementById('btn-send-code').addEventListener('click', sendCode);
+document.getElementById('btn-set-password').addEventListener('click', setPassword);
+document.getElementById('btn-enable-notif').addEventListener('click', enableNotifications);
+document.getElementById('btn-test-notif').addEventListener('click', sendTestNotification);
+
+// Login con contraseña
+document.getElementById('btn-password-login').addEventListener('click', passwordLogin);
+document.getElementById('btn-show-signup').addEventListener('click', toggleSignup);
+document.getElementById('btn-show-otp').addEventListener('click', sendCode);
+document.getElementById('btn-back-password').addEventListener('click', showPasswordStep);
+document.getElementById('login-password').addEventListener('keydown', e => { if (e.key === 'Enter') passwordLogin(); });
+document.getElementById('login-email').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
+
+// Login con código (respaldo)
 document.getElementById('btn-verify-code').addEventListener('click', verifyCode);
 document.getElementById('btn-resend').addEventListener('click', sendCode);
-document.getElementById('login-email').addEventListener('keydown', e => { if (e.key === 'Enter') sendCode(); });
 document.getElementById('login-code').addEventListener('keydown', e => { if (e.key === 'Enter') verifyCode(); });
 document.getElementById('login-code').addEventListener('input', e => {
   const len = e.target.value.trim().length;
@@ -914,9 +1106,12 @@ document.addEventListener('visibilitychange', async () => {
 
 init();
 
-// PWA: funciona sin conexión
+// PWA: funciona sin conexión + notificaciones
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js')
+    .then(() => navigator.serviceWorker.ready)
+    .then(reg => { swRegistration = reg; refreshNotifyUI(); })
+    .catch(() => {});
 }
 </script>
 </body>
